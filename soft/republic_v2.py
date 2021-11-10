@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pylab as plt
 
+ROOTDIR = '../set_of_36/'
+
 def cosine_func(p,x):
   return np.cos(x * p[0] + p[1])
 
@@ -135,6 +137,75 @@ def simulate_dataset(N=1000,Nseg=3,J=4,K=6,L=3,star_basis='fourier',sys_basis='p
   F = M_true + WN
   return t, s, F, sigma, p_true, M_true, A, B, Star, Sys
 
+def read_LCs_james(star_id = 0, use_updates = True):
+  import glob as g
+  if use_updates:
+    lcdir = ROOTDIR + 'ubm/'
+  else:
+    lcdir = ROOTDIR + 'bm/'
+  for c in range(24):
+    c_files = np.sort(g.glob(lcdir+'c{:02d}_*_lcs.txt'.format(c+1)))  
+    if len(c_files) == 0:
+      c_files = g.glob(lcdir+'c{:02d}_lcs.txt'.format(c+1))
+    for i,fl in enumerate(c_files):
+      if i == 0:
+        t, f = np.loadtxt(fl, usecols=[0, star_id+1], unpack=True)
+        s = np.zeros_like(t,'int')
+      else:
+        tt, ff = np.loadtxt(fl, usecols=[0, star_id+1], unpack=True)
+        t = np.concatenate([t,tt])
+        f = np.concatenate([f,ff])
+        s = np.concatenate([s,np.zeros_like(tt,'int')+i])
+    sig = np.median(abs(f[1:]-f[:-1]))
+    if c == 0:
+      N = len(f)
+      F = f.reshape((1,N))
+      sigma = np.zeros_like(F) +sig
+    else:
+      F = np.concatenate([F,f.reshape((1,N))])
+      sigma = np.concatenate([sigma,np.zeros((1,N))+sig])
+  # normalise
+  m = F.mean()
+  F = 1e3 * (F/m-1) # in parts per thousand
+  sigma = 1e3 * sigma / m
+  t /= 86400 # in days
+  return t, s, F, sigma
+
+def read_stellar(star_id):
+  fl = ROOTDIR + '../stellar_lcs.txt'
+  t, f = np.loadtxt(fl, usecols=[0, star_id+1], unpack=True)
+  m = f.mean()
+  f = 1e3 * (f/m-1) # in parts per thousand
+  t /= 86400 # in days
+  return t, f
+
+def read_CBVs_james(use_updates = True, normalise=True):
+  import glob as g
+  if use_updates:
+    lcdir = ROOTDIR + 'ubm/'
+  else:
+    lcdir = ROOTDIR + 'bm/'
+  for c in range(24):
+    cbv_files = np.sort(g.glob(lcdir+'c{:02d}_*_cbvs_stellar_0.2.txt'.format(c+1)))  
+    if len(cbv_files) == 0:
+      print(lcdir+'c{:02d}_cbvs_stellar.txt'.format(c+1))
+      cbv_files = g.glob(lcdir+'c{:02d}_cbvs_stellar_0.2.txt'.format(c+1))
+    print(cbv_files)
+    for i,fl in enumerate(cbv_files):
+      A = np.genfromtxt(fl, comments='#').T
+      print ('Camera {}, segment {}, {} observations, {} CBVs.'.format(c+1,i,A.shape[0],A.shape[1]))
+      plt.plot(A.T,'-',lw=0.5,color='C{}'.format(c%10))      
+#  K = A.shape[0]
+#  if normalise:
+#    for k in range(K):
+#      tmp = A[k,:]
+#      tmp -= tmp.mean()
+#      A[k,:] = tmp / tmp.std()
+#  if include_bias:
+#    A = np.concatenate([np.ones_like(t).reshape((1,N)),A])
+  plt.savefig(ROOTDIR + 'republic2_plots/CBVs.png')
+  return A
+
 def fit_model(t, s, F, sigma, K_in=6,L_in=3,star_basis='fourier',sys_basis='poly',doplot=False):
   J, N = F.shape
   # construct basis sets
@@ -210,42 +281,23 @@ def fit_model(t, s, F, sigma, K_in=6,L_in=3,star_basis='fourier',sys_basis='poly
     ax[3].set_xlim(t.min(),t.max())
     ax[3].set_xlabel('time')
     plt.tight_layout()
-  return {'par': p_fit, 'M_fit': M_fit, 'A': A, 'B': B, 'Star_fit': Star_fit, 'Sys_fit': Sys_fit}, fig
+  return {'par': p_fit, 'M_fit': M_fit, 'A': A, 'B': B, 'Star_fit': Star_fit, 'Sys_fit': Sys_fit}, (fig, ax)
   
-def read_LCs_james(star_id = 0):
-  lcdir = '../sim/set1_20210330/'
-  import glob as g
-  for c in range(24):
-    c_files = np.sort(g.glob(lcdir+'c{:02d}_*_lcs.txt'.format(c+1)))  
-    for i,fl in enumerate(c_files):
-      if i == 0:
-        t, f = np.loadtxt(fl, usecols=[0, star_id+1], unpack=True)
-        s = np.zeros_like(t,'int')
-      else:
-        tt, ff = np.loadtxt(fl, usecols=[0, star_id+1], unpack=True)
-        t = np.concatenate([t,tt])
-        f = np.concatenate([f,ff])
-        s = np.concatenate([s,np.zeros_like(tt,'int')+i])
-    sig = np.median(abs(f[1:]-f[:-1]))
-    if c == 0:
-      N = len(f)
-      F = f.reshape((1,N))
-      sigma = np.zeros_like(F) +sig
-    else:
-      F = np.concatenate([F,f.reshape((1,N))])
-      sigma = np.concatenate([sigma,np.zeros((1,N))+sig])
-  # normalise
-  m = F.mean()
-  F = 1e3 * (F/m-1) # in parts per thousand
-  sigma = 1e3 * sigma / m
-  t /= 86400 # in days
-  return t, s, F, sigma
 
 #t, s, F, sigma, p_true, M_true, A, B, Star, Sys = simulate_dataset(star_basis='gauss',K=10)
 
+#A = read_CBVs_james()
+use_updates = True
 for star_id in range(36):
   print(star_id)
-  t, s, F, sigma = read_LCs_james(star_id)
-  r,fig = fit_model(t, s, F, sigma, star_basis ='fourier', K_in = 50, L_in = 4, doplot=True)
-  plt.savefig('../sim/set1_20210330/republic2_plots/star_{:02}.png'.format(star_id))
+  t, s, F, sigma = read_LCs_james(star_id, use_updates = use_updates)
+  ts, fs = read_stellar(star_id)
+  r,(fig,axes) = fit_model(t, s, F, sigma, star_basis ='fourier', K_in = 50, L_in = 6, doplot=True)
+  axes[1].plot(ts,fs, 'k--', lw=2)
+  if use_updates: 
+    folder = 'bm/'
+  else:
+    folder = 'ubm/'
+  plt.savefig(ROOTDIR + folder + 'republic2_plots/star_{:02}.png'.format(star_id))
+#  plt.show()
   plt.close('all')
